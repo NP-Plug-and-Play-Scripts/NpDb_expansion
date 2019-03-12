@@ -1,0 +1,4 @@
+title,Gamma_butyrolactones_92_part_01_output_MS2LDA_ready
+cfm_model,param_output0.log - cfm supplied model trained on metabolites.
+ce_mode,true
+description,contains data of 92 Gamma_butyrolactones obtained from the NP_DB. part 1 of 10

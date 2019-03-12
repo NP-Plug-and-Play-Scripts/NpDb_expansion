@@ -35,9 +35,8 @@ returns: a dict containing the identifiers as Keys and theirs values as value.
 def makeMgfIdentifierIndex(spectra,numOfIdentifiers):
     identifierDict = {};
     for identifierIndex in range(1,numOfIdentifiers):
-        splitIdentifier = spectra[identifierIndex].split("=");
+        splitIdentifier = spectra[identifierIndex].split("=",1);
         identifierDict[splitIdentifier[0]] = splitIdentifier[1];
-        
     return identifierDict;
 
 """
@@ -47,18 +46,25 @@ description = small explanation of the experiment.
 databasePath = path to the NP database.
 returns: experimentID
 """
-def experimentTableFiller(fileName, description, databasePath):
+def experimentTableFiller(infoPath, databasePath):
     db = sqlite3.connect(databasePath);
     cursor = db.cursor()
-    cursor.execute('''SELECT max(cfm_experiment_id) FROM cfm_experiment''');
+    cursor.execute('''select max(cfm_experiment_id) from cfm_experiment''');
     experimentID = 0;
-    for row in cursor:
-        experimentID = row[0] + 1;
+    experimentInfoDict = {};
+    row = cursor.fetchone();
+    if row[0] == None:
+        experimentID = 1;
+    else: 
+        experimentID = int(row[0]) + 1;
+    for line in open(infoPath):
+        splittedLine = line.split(",");
+        experimentInfoDict[splittedLine[0]] = splittedLine[1].strip();
     try:
         #insert in to database
         with db:
-            db.execute('''INSERT INTO cfm_experiment(cfm_experiment_id, title, details)VALUES(?,?,?)'''
-                , (experimentID, fileName, description);
+            db.execute('''INSERT INTO cfm_experiment(cfm_experiment_id, title, cfm_model, ce_mode, description)VALUES(?,?,?,?,?)'''
+                , (experimentID, experimentInfoDict["title"], experimentInfoDict["cfm_model"], experimentInfoDict["ce_mode"], experimentInfoDict["description"]));
     except sqlite3.IntegrityError:
         print('Record already exists')
     db.close();
@@ -66,24 +72,24 @@ def experimentTableFiller(fileName, description, databasePath):
 """
 This function fills the database table np_spectra with data contained in the spectra list.
 """
-def npTableFiller(db,spectra,numOfIdentifiers,maxID):
+def npTableFiller(db,spectra,numOfIdentifiers,experimentID):
     #contains the values for the np_spectra db entry.
     idDict = makeMgfIdentifierIndex(spectra,numOfIdentifiers);
-    spectraID = maxID +1;
-    cfmModel = "param_output0.log - cfm supplied model trained on metabolites.";
-    ce = True;
+    spectraID = idDict["ID"] + "_" + str(experimentID);
     try:
         with db:
-            db.execute('''INSERT INTO np_spectra(spectra_id, structure_id, molmass,cfm_model,ce_mode)VALUES(?,?,?,?,?)'''
-                , (spectraID, idDict["ID"], idDict["PEPMASS"], cfmModel,ce));
+            db.execute('''INSERT INTO np_spectra(spectra_id, cfm_experiment_id, structure_id, smiles, molmass)VALUES(?,?,?,?,?)'''
+                , (spectraID, experimentID, idDict["ID"], idDict["SMILES"], idDict["PEPMASS"]));
     except sqlite3.IntegrityError:
-        print('Record already exists')
-            
+        print('Record already exists zeehond')
+    return spectraID;
+
+"""fills the spectra peaks table with the info of a specta
+requires a database, a spectra entry, the number of identifiers and a spectraID"""
 def spectraPeakTableFiller(db,spectra,numOfIdentifiers,spectraID):
     peakNum = 0;
     for peak in spectra[numOfIdentifiers:-1]:
-        peakID = spectraID + "_" + str(peakNum);
-        print(peakID)
+        peakID = str(spectraID) + "_" + str(peakNum);
         peakNum += 1; 
         splittedPeak = peak.split(" ");
         weight = float(splittedPeak[0]);
@@ -93,26 +99,27 @@ def spectraPeakTableFiller(db,spectra,numOfIdentifiers,spectraID):
                 db.execute('''INSERT INTO spectra_peaks(peak_id, spectra_id, weight, intensity)VALUES(?,?,?,?)'''
                     , (peakID,spectraID,weight,intensity));
         except sqlite3.IntegrityError:
-            print('Record already exists')
-
+            print('Record already exists koe')
+"""takes a list of spectra, a database path and a experiment id and  enters the data 
+in to the np_spectra and spectra_peaks tables"""
 def spectraTableFiller(spectraList,databasePath,experimentID):
     db = sqlite3.connect(databasePath);
-   
     #gets the number of identifiers in the spectra. if the line of a spectra starts with a capitol letter the count goes up
     for spectra in spectraList:
         numOfIdentifiers = len([line for line in spectra if line[0].isalpha()]) - 1;
         #add spectra to np_spectra table
-        npTableFiller(db,spectra,numOfIdentifiers,experimentID);
+        spectraID = npTableFiller(db,spectra,numOfIdentifiers,experimentID);
         #add peaks of spectra to spectra_peaks table
-        spectraPeakTableFiller(db,spectra,numOfIdentifiers,spectraID);
-        maxID += 1;    
-        
+        spectraPeakTableFiller(db,spectra,numOfIdentifiers,spectraID);  
     db.close();
 
 
-def main(spectraPath,dataDescription,databasePath):
-    fileName = spectraPath.split("/")[-1].split(".")[0]
+def main(spectraPath,infoPath,databasePath):
     spectraList = makeSpectraList(spectraPath);
-    spectraTableFiller(spectraList,databasePath);
+    experimentID = experimentTableFiller(infoPath,databasePath)
+    print("experiment uploaded!")
+    print("spectra now being uploaded. Please wait.")
+    spectraTableFiller(spectraList,databasePath,experimentID);
+    print("spectra uploaded!")
 if __name__ == "__main__":
-    main(sys.argv[1],sys.argv[2]);
+    main(sys.argv[1],sys.argv[2],sys.argv[3]);
